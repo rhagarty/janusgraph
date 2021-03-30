@@ -162,6 +162,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
                 <version>3.0.0-M3</version>
+                <configuration>
+                    <skipTests>true</skipTests>
+                    <rat.skip>true</rat.skip>
+                </configuration>
                 <executions>
                     <execution>
                         <id>enforce-dependency-convergence</id>
@@ -242,8 +246,6 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <skipTests>true</skipTests>
-                    <rat.skip>true</rat.skip>
                     <excludeSubProjects>true</excludeSubProjects>
                     <excludes>
                         <exclude>**/target/**</exclude>
