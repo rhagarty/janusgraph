@@ -52,7 +52,7 @@ spec:
       name: varlibcontainers
   containers:
     - name: jdk11
-      image: maven:3.6.3-jdk-11-slim
+      image: jenkins/slave:latest-jdk11
       tty: true
       command: ["/bin/bash"]
       workingDir: ${workingDir}
@@ -82,13 +82,15 @@ spec:
             secretKeyRef:
               name: git-credentials
               key: username
+              optional: true
         - name: GIT_AUTH_PWD
           valueFrom:
             secretKeyRef:
               name: git-credentials
               key: password
+              optional: true
     - name: buildah
-      image: quay.io/buildah/stable:v1.11.0
+      image: quay.io/buildah/stable:v1.9.0
       tty: true
       command: ["/bin/bash"]
       workingDir: ${workingDir}
@@ -117,6 +119,12 @@ spec:
               name: ibmcloud-apikey
               optional: true
         - name: REGISTRY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: REGISTRY_PASSWORD
+              name: ibmcloud-apikey
+              optional: true
+        - name: APIKEY
           valueFrom:
             secretKeyRef:
               key: APIKEY
@@ -191,14 +199,22 @@ spec:
     node(buildLabel) {
         container(name: 'jdk11', shell: '/bin/bash') {
             checkout scm
+            stage('Setup') {
+                sh '''
+                    echo "IMAGE_NAME=$(basename -s .git `git config --get remote.origin.url` | tr '[:upper:]' '[:lower:]' | sed 's/_/-/g')" > ./env-config
+                    echo "REPO_URL=$(git config --get remote.origin.url)" >> ./env-config
+
+                    chmod a+rw ./env-config
+                '''
+            }
             stage('Build') {
                 sh '''
-                    mvn package
+                    ./gradlew assemble --no-daemon
                 '''
             }
             stage('Test') {
                 sh '''#!/bin/bash
-                    mvn test
+                    ./gradlew testClasses --no-daemon
                 '''
             }
         }
@@ -285,14 +301,18 @@ spec:
                 '''
             }
         }
-	      container(name: 'buildah', shell: '/bin/bash') {
+        container(name: 'buildah', shell: '/bin/bash') {
             stage('Build image') {
                 sh '''#!/bin/bash
                     set -e
                     . ./env-config
 
-                    echo TLSVERIFY=${TLSVERIFY}
-                    echo CONTEXT=${CONTEXT}
+		            echo TLSVERIFY=${TLSVERIFY}
+		            echo CONTEXT=${CONTEXT}
+
+		            if [[ -z "${REGISTRY_PASSWORD}" ]]; then
+		              REGISTRY_PASSWORD="${APIKEY}"
+		            fi
 
                     APP_IMAGE="${REGISTRY_URL}/${REGISTRY_NAMESPACE}/${IMAGE_NAME}:${IMAGE_VERSION}"
 
@@ -370,15 +390,29 @@ spec:
                     . ./env-config
 
                     if [[ "${CLUSTER_TYPE}" == "openshift" ]]; then
-                        ROUTE_HOST=$(kubectl get route/${IMAGE_NAME} --namespace ${ENVIRONMENT_NAME} --output=jsonpath='{ .spec.host }')
-                        URL="https://${ROUTE_HOST}"
+                        PROTOCOL="https"
+                        HOST=$(kubectl get route/${IMAGE_NAME} --namespace ${ENVIRONMENT_NAME} --output=jsonpath='{ .spec.host }')
+                        PORT="443"
                     else
-                        INGRESS_HOST=$(kubectl get ingress.networking.k8s.io/${IMAGE_NAME} --namespace ${ENVIRONMENT_NAME} --output=jsonpath='{ .spec.rules[0].host }')
-                        URL="http://${INGRESS_HOST}"
+                        PROTOCOL="http"
+                        HOST=$(kubectl get ingress.networking.k8s.io/${IMAGE_NAME} --namespace ${ENVIRONMENT_NAME} --output=jsonpath='{ .spec.rules[0].host }')
+                        PORT="80"
                     fi
+
+                    echo "PROTOCOL=${PROTOCOL}" >> ./env-config
+                    echo "HOST=${HOST}" >> ./env-config
+                    echo "PORT=${PORT}" >> ./env-config
+
+                    URL="${PROTOCOL}://${HOST}"
+<<<<<<< HEAD
 
                     sleep_countdown=5
 
+=======
+
+                    sleep_countdown=5
+
+>>>>>>> 688f22cb7e587d24e1fc2a7533d3faaaceb1af4d
                     # sleep for 10 seconds to allow enough time for the server to start
                     sleep 10
                     echo "Health check start"
@@ -396,6 +430,35 @@ spec:
                     echo "====================================================================="
                 '''
             }
+        }
+        container(name: 'jdk11', shell: '/bin/bash') {
+            stage('Pact verify') {
+                sh '''#!/bin/bash
+                    if [[ -z "${PACTBROKER_URL}" ]]; then
+                      echo "PactBroker url not set. Skipping pact verification"
+                      exit 0
+                    fi
+
+                    set -x
+                    . ./env-config
+
+                    if ./gradlew tasks --all | grep -Eq "^pactVerify"; then
+                        echo "Pact Verify task found"
+                    else
+                        echo "Skipping Pact Verify step, no task defined"
+                        exit 0
+                    fi
+
+                    ./gradlew pactVerify \
+                      -PpactBrokerUrl=${PACTBROKER_URL} \
+                      -PpactProtocol=${PROTOCOL} \
+                      -PpactHost=${HOST} \
+                      -PpactPort=${PORT} \
+                      -Ppact.verifier.publishResults=true
+                '''
+            }
+        }
+        container(name: 'ibmcloud', shell: '/bin/bash') {
             stage('Package Helm Chart') {
                 sh '''#!/bin/bash
 
@@ -471,8 +534,6 @@ spec:
                     git config --global user.name "Jenkins Pipeline"
 
                     GIT_URL="https://${username}:${password}@${host}/${org}/${repo}"
-
-                    echo "Cloning repo: https://${username}:xxxx@${host}/${org}/${repo}"
 
                     git clone -b ${branch} ${GIT_URL} gitops_cd
                     cd gitops_cd

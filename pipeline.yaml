@@ -1,4 +1,4 @@
 version: 1.1.4
-name: java-maven
+name: java-gradle
 runtime: java
-build-tool: maven
+build-tool: gradle
