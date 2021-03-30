@@ -242,7 +242,7 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <excludeSubProjects>false</excludeSubProjects>
+                    <excludeSubProjects>true</excludeSubProjects>
                     <excludes>
                         <exclude>**/target/**</exclude>
                         <exclude>**/.classpath</exclude>
@@ -278,7 +278,6 @@
                     </excludes>
                 </configuration>
             </plugin>
-
         </plugins>
         <pluginManagement>
             <plugins>
