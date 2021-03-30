@@ -243,6 +243,7 @@
                 </executions>
                 <configuration>
                     <skipTests>true</skipTests>
+                    <rat.skip>true</rat.skip>
                     <excludeSubProjects>true</excludeSubProjects>
                     <excludes>
                         <exclude>**/target/**</exclude>
