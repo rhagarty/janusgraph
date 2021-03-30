@@ -164,7 +164,6 @@
                 <version>3.0.0-M3</version>
                 <configuration>
                     <skipTests>true</skipTests>
-                    <rat.skip>true</rat.skip>
                 </configuration>
                 <executions>
                     <execution>
